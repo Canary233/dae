@@ -51,7 +51,7 @@
 #define MAX_ARG_LEN 128
 #define IPV6_MAX_EXTENSIONS 8
 
-#define ipv6_optlen(p) (((p)+1) << 3)
+#define ipv6_optlen(p) (((p) + 1) << 3)
 
 #define OUTBOUND_DIRECT 0
 #define OUTBOUND_BLOCK 1
@@ -263,7 +263,7 @@ struct match_set {
 		__u32 pname[TASK_COMM_LEN / 4];
 		__u8 dscp;
 	};
-	bool not ; // A subrule flag (this is not a match_set flag).
+	bool not; // A subrule flag (this is not a match_set flag).
 	enum MatchType type;
 	__u8 outbound; // User-defined value range is [0, 252].
 	bool must;
@@ -410,7 +410,7 @@ static int ipv6_ext_skip_loop_cb(__u32 index, void *data)
 		return 1;
 
 	int ret = bpf_skb_load_bytes(ctx->skb, *ctx->offset, ctx->nexthdr,
-					 sizeof(*ctx->nexthdr));
+				     sizeof(*ctx->nexthdr));
 	if (ret) {
 		bpf_printk("not a valid IPv6 packet");
 		ctx->result = -EFAULT;
@@ -510,21 +510,21 @@ parse_transport(const struct __sk_buff *skb, __u32 link_h_len,
 		__u8 nexthdr = ipv6h->nexthdr;
 
 		// Skip all extension headers.
-		struct ipv6_ext_ctx ext_ctx = {
-			.skb = skb,
-			.offset = &offset,
-			.nexthdr = &nexthdr,
-			.result = 0
-		};
+		struct ipv6_ext_ctx ext_ctx = { .skb = skb,
+						.offset = &offset,
+						.nexthdr = &nexthdr,
+						.result = 0 };
 
-		ret = bpf_loop(IPV6_MAX_EXTENSIONS, ipv6_ext_skip_loop_cb, &ext_ctx, 0);
+		ret = bpf_loop(IPV6_MAX_EXTENSIONS, ipv6_ext_skip_loop_cb,
+			       &ext_ctx, 0);
 		if (ret < 0)
 			return ret;
 		if (ext_ctx.result)
 			return ext_ctx.result;
 
 		if (is_extension_header(nexthdr)) {
-			bpf_printk("Unexpected hdr or exceeds IPV6_MAX_EXTENSIONS limit");
+			bpf_printk(
+				"Unexpected hdr or exceeds IPV6_MAX_EXTENSIONS limit");
 			return 1;
 		}
 
@@ -756,7 +756,7 @@ before_next_loop:
 		// subrule.
 
 		if ((ctx->isdns_must_goodsubrule_badrule & 0b10) > 0 ==
-		    match_set->not ) {
+		    match_set->not) {
 			// This subrule does not hit.
 			ctx->isdns_must_goodsubrule_badrule |= 0b1;
 		}
@@ -775,7 +775,7 @@ before_next_loop:
 #ifdef __DEBUG_ROUTING
 			bpf_printk(
 				"MATCHED: match_set->type: %u, match_set->not: %d",
-				match_set->type, match_set->not );
+				match_set->type, match_set->not);
 #endif
 
 			// DNS requests should routed by control plane if outbound is not
@@ -785,8 +785,10 @@ before_next_loop:
 				     OUTBOUND_MUST_RULES)) {
 				ctx->isdns_must_goodsubrule_badrule |= 0b100;
 			} else {
-				bool must = ctx->isdns_must_goodsubrule_badrule & 0b100 ||
-							match_set->must;
+				bool must =
+					ctx->isdns_must_goodsubrule_badrule &
+						0b100 ||
+					match_set->must;
 
 				if (!must &&
 				    (ctx->isdns_must_goodsubrule_badrule &
@@ -913,7 +915,10 @@ static __always_inline void prep_redirect_to_control_plane(
 	if (!link_h_len) {
 		__u16 l3proto = skb->protocol;
 
-		bpf_skb_change_head(skb, sizeof(struct ethhdr), 0);
+		/* Use adjust_room to prepend L2 header while preserving checksum state */
+		bpf_skb_adjust_room(skb, sizeof(struct ethhdr),
+				    BPF_ADJ_ROOM_NET,
+				    BPF_F_ADJ_ROOM_NO_CSUM_RESET);
 		bpf_skb_store_bytes(skb, offsetof(struct ethhdr, h_proto),
 				    &l3proto, sizeof(l3proto), 0);
 	}
@@ -970,9 +975,11 @@ static __always_inline void copy_reversed_tuples(struct tuples_key *key,
 }
 
 static __always_inline struct udp_conn_state *
-refresh_udp_conn_state_timer(struct tuples_key *key, bool is_wan_ingress_direction)
+refresh_udp_conn_state_timer(struct tuples_key *key,
+			     bool is_wan_ingress_direction)
 {
-	struct udp_conn_state *state = bpf_map_lookup_elem(&udp_conn_state_map, key);
+	struct udp_conn_state *state =
+		bpf_map_lookup_elem(&udp_conn_state_map, key);
 
 	if (state)
 		goto rearm;
@@ -980,7 +987,8 @@ refresh_udp_conn_state_timer(struct tuples_key *key, bool is_wan_ingress_directi
 	struct udp_conn_state new_state = {};
 
 	new_state.is_wan_ingress_direction = is_wan_ingress_direction;
-	if (unlikely(bpf_map_update_elem(&udp_conn_state_map, key, &new_state, BPF_NOEXIST)))
+	if (unlikely(bpf_map_update_elem(&udp_conn_state_map, key, &new_state,
+					 BPF_NOEXIST)))
 		return NULL;
 
 	state = bpf_map_lookup_elem(&udp_conn_state_map, key);
@@ -995,7 +1003,8 @@ rearm:
 	return state;
 }
 
-static __always_inline int do_tproxy_lan_egress(struct __sk_buff *skb, u32 link_h_len)
+static __always_inline int do_tproxy_lan_egress(struct __sk_buff *skb,
+						u32 link_h_len)
 {
 	struct ethhdr ethh;
 	struct iphdr iph;
@@ -1013,8 +1022,10 @@ static __always_inline int do_tproxy_lan_egress(struct __sk_buff *skb, u32 link_
 		return TC_ACT_OK;
 	}
 
-	if (skb->ingress_ifindex == NOWHERE_IFINDEX &&  // Only drop NDP_REDIRECT packets from localhost
-		l4proto == IPPROTO_ICMPV6 && icmp6h.icmp6_type == NDP_REDIRECT) {
+	if (skb->ingress_ifindex ==
+		    NOWHERE_IFINDEX && // Only drop NDP_REDIRECT packets from localhost
+	    l4proto == IPPROTO_ICMPV6 &&
+	    icmp6h.icmp6_type == NDP_REDIRECT) {
 		// REDIRECT (NDP)
 		return TC_ACT_SHOT;
 	}
@@ -1046,7 +1057,8 @@ int tproxy_lan_egress_l3(struct __sk_buff *skb)
 	return do_tproxy_lan_egress(skb, 0);
 }
 
-static __always_inline int do_tproxy_lan_ingress(struct __sk_buff *skb, u32 link_h_len)
+static __always_inline int do_tproxy_lan_ingress(struct __sk_buff *skb,
+						 u32 link_h_len)
 {
 	struct ethhdr ethh;
 	struct iphdr iph;
@@ -1305,7 +1317,8 @@ static __always_inline bool pid_is_control_plane(struct __sk_buff *skb,
 	return false;
 }
 
-static __always_inline int do_tproxy_wan_ingress(struct __sk_buff *skb, u32 link_h_len)
+static __always_inline int do_tproxy_wan_ingress(struct __sk_buff *skb,
+						 u32 link_h_len)
 {
 	struct ethhdr ethh;
 	struct iphdr iph;
@@ -1352,7 +1365,8 @@ int tproxy_wan_ingress_l3(struct __sk_buff *skb)
 
 // Routing and redirect the packet back.
 // We cannot modify the dest address here. So we cooperate with wan_ingress.
-static __always_inline int do_tproxy_wan_egress(struct __sk_buff *skb, u32 link_h_len)
+static __always_inline int do_tproxy_wan_egress(struct __sk_buff *skb,
+						u32 link_h_len)
 {
 	// Skip packets not from localhost.
 	if (skb->ingress_ifindex != NOWHERE_IFINDEX)
